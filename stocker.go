@@ -35,7 +35,7 @@ func extractArgs() (command string, args []string, success bool) {
   }
 
   if command == "add" && len(args) == 0 {
-    fmt.Println("Usage: stocker add [service name] (e.g. postgres)")
+    fmt.Println("Usage: stocker add SERVICE_NAME [-f] (e.g. stocker add postgres)")
     success = false
     return
   }
@@ -48,18 +48,30 @@ func commandAdd(args []string) (err error) {
   ensureDockerComposeYamlExists()
 
   service := args[0]
-  serviceConfig := fmt.Sprintf("  %s:\n    image: %s:latest\n", service, service)
+  force := false
+  if len(args) > 1 && args[1] == "-f" {
+    force = true
+  }
 
   b, err := ioutil.ReadFile("docker-compose.yml")
   check(err)
 
   content := string(b)
+
+  if !force {
+    if strings.Contains(content, fmt.Sprintf("%s:", service)) {
+      fmt.Println("Found", service, "service in your docker-compose.yml, -f to add it anyway")
+      return nil
+    }
+  }
+
+  serviceConfig := fmt.Sprintf("  %s:\n    image: %s:latest\n", service, service)
   newContent := strings.Replace(content, "services:\n", fmt.Sprintf("services:\n%s", serviceConfig), 1)
 
   err = ioutil.WriteFile("docker-compose.yml", []byte(newContent), 0644)
   check(err)
 
-  fmt.Println("Added %s service to your docker-compose.yml", service)
+  fmt.Println("Added", service, "service to your docker-compose.yml")
 
   return nil
 }
