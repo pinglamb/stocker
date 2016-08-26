@@ -1,7 +1,11 @@
 package main
 
-import "fmt"
-import "os"
+import (
+  "fmt"
+  "os"
+  "strings"
+  "io/ioutil"
+)
 
 func main() {
   command, args, success := extractArgs()
@@ -42,6 +46,21 @@ func extractArgs() (command string, args []string, success bool) {
 
 func commandAdd(args []string) (err error) {
   ensureDockerComposeYamlExists()
+
+  service := args[0]
+  serviceConfig := fmt.Sprintf("  %s:\n    image: %s:latest\n", service, service)
+
+  b, err := ioutil.ReadFile("docker-compose.yml")
+  check(err)
+
+  content := string(b)
+  newContent := strings.Replace(content, "services:\n", fmt.Sprintf("services:\n%s", serviceConfig), 1)
+
+  err = ioutil.WriteFile("docker-compose.yml", []byte(newContent), 0644)
+  check(err)
+
+  fmt.Println("Added %s service to your docker-compose.yml", service)
+
   return nil
 }
 
@@ -51,13 +70,8 @@ func commandUp() (err error) {
 
 func ensureDockerComposeYamlExists() {
   if _, err := os.Stat("docker-compose.yml"); os.IsNotExist(err) {
-    fmt.Println("Creating docker-compose.yml")
-    f, err := os.Create("docker-compose.yml")
+    err := ioutil.WriteFile("docker-compose.yml", []byte("version: \"2\"\n\nservices:\n"), 0644)
     check(err)
-    _, err = f.WriteString("version: \"2\"\n\nservices:\n")
-    check(err)
-
-    f.Sync()
   } else {
     fmt.Println("Found docker-compose.yml")
   }
