@@ -15,3 +15,23 @@ curl -L https://github.com/pinglamb/stocker/releases/download/0.1/stocker-`uname
 ```
 
 P.S. It currently works on Mac only.
+
+## How to use
+
+Inside your project, you can run:
+
+```
+stocker add postgres
+```
+
+It will add `postgres` to your `docker-compose.yml`, it will also map the `ports` the service exposes to your host machine. You might need to update your configuration file for that.
+
+---
+
+```
+stocker up
+```
+
+## Contribute
+
+Feel Free.
