@@ -3,9 +3,20 @@ package main
 import (
   "fmt"
   "os"
+  "os/exec"
+  "bytes"
   "strings"
   "io/ioutil"
+  "encoding/json"
 )
+
+type DockerInspect struct {
+  Config DockerImageConfig `json:"Config"`
+}
+
+type DockerImageConfig struct {
+  ExposedPorts map[string]*json.RawMessage `json:"ExposedPorts"`
+}
 
 func main() {
   command, args, success := extractArgs()
@@ -35,7 +46,7 @@ func extractArgs() (command string, args []string, success bool) {
   }
 
   if command == "add" && len(args) == 0 {
-    fmt.Println("Usage: stocker add SERVICE_NAME [-f] (e.g. stocker add postgres)")
+    fmt.Println("Usage: stocker add SERVICE_NAME [-f] (e.g. stocker add postgres:9.5)")
     success = false
     return
   }
@@ -48,6 +59,14 @@ func commandAdd(args []string) (err error) {
   ensureDockerComposeYamlExists()
 
   service := args[0]
+  version := "latest"
+  if strings.Contains(service, ":") {
+    serviceAndVersion := strings.Split(service, ":")
+    service = serviceAndVersion[0]
+    version = serviceAndVersion[1]
+  }
+  image := fmt.Sprintf("%s:%s", service, version)
+
   force := false
   if len(args) > 1 && args[1] == "-f" {
     force = true
@@ -65,7 +84,30 @@ func commandAdd(args []string) (err error) {
     }
   }
 
-  serviceConfig := fmt.Sprintf("  %s:\n    image: %s:latest\n", service, service)
+  pullCmd := exec.Command("docker", "pull", image)
+  pullCmd.Stdout = os.Stdout
+  pullCmd.Stderr = os.Stderr
+  err = pullCmd.Run()
+  check(err)
+
+  inspectCmd := exec.Command("docker", "inspect", image)
+  var output bytes.Buffer
+  inspectCmd.Stdout = &output
+  err = inspectCmd.Run()
+  check(err)
+  var j []DockerInspect
+  err = json.Unmarshal(output.Bytes(), &j)
+  check(err)
+  var ports bytes.Buffer
+  if len(j[0].Config.ExposedPorts) > 0 {
+    ports.WriteString("    ports:\n")
+    for k := range j[0].Config.ExposedPorts {
+      port := strings.Split(k, "/")[0]
+      ports.WriteString(fmt.Sprintf("      - %s:%s\n", port, port))
+    }
+  }
+
+  serviceConfig := fmt.Sprintf("  %s:\n    image: \"%s\"\n%s", service, image, ports.String())
   newContent := strings.Replace(content, "services:\n", fmt.Sprintf("services:\n%s", serviceConfig), 1)
 
   err = ioutil.WriteFile("docker-compose.yml", []byte(newContent), 0644)
