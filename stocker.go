@@ -6,6 +6,7 @@ import (
   "os/exec"
   "bytes"
   "strings"
+  "regexp"
   "io/ioutil"
   "encoding/json"
 )
@@ -55,7 +56,7 @@ func extractArgs() (command string, args []string, success bool) {
   return
 }
 
-func commandAdd(args []string) (err error) {
+func commandAdd(args []string) {
   ensureDockerComposeYamlExists()
 
   service := args[0]
@@ -66,33 +67,29 @@ func commandAdd(args []string) (err error) {
     version = serviceAndVersion[1]
   }
   image := fmt.Sprintf("%s:%s", service, version)
-
   force := false
   if len(args) > 1 && args[1] == "-f" {
     force = true
   }
 
-  b, err := ioutil.ReadFile("docker-compose.yml")
-  check(err)
-
-  content := string(b)
-
+  content := readDockerComposeYaml()
   if !force {
     if strings.Contains(content, fmt.Sprintf("%s:", service)) {
       fmt.Println("Found", service, "service in your docker-compose.yml, -f to add it anyway")
-      return nil
+      return
     }
   }
 
   pullCmd := exec.Command("docker", "pull", image)
   pullCmd.Stdout = os.Stdout
   pullCmd.Stderr = os.Stderr
-  err = pullCmd.Run()
+  err := pullCmd.Run()
   check(err)
 
   inspectCmd := exec.Command("docker", "inspect", image)
   var output bytes.Buffer
   inspectCmd.Stdout = &output
+  inspectCmd.Stderr = os.Stderr
   err = inspectCmd.Run()
   check(err)
   var j []DockerInspect
@@ -115,20 +112,69 @@ func commandAdd(args []string) (err error) {
 
   fmt.Println("Added", service, "service to your docker-compose.yml")
 
-  return nil
+  return
 }
 
-func commandUp() (err error) {
-  return nil
+func commandUp() {
+  if !dockerComposeYamlExists() {
+    fmt.Println("Missing docker-compose.yml, you can create one and add services to it by running \"stocker add\"")
+    return
+  }
+
+  psCommand := exec.Command("docker", "ps", "--format", "{{.ID}}\t{{.Ports}}")
+  var output bytes.Buffer
+  psCommand.Stdout = &output
+  psCommand.Stderr = os.Stderr
+  err := psCommand.Run()
+  check(err)
+
+  containers := strings.Split(output.String(), "\n")
+
+  content := readDockerComposeYaml()
+  re := regexp.MustCompile("- (\\d+):\\d+")
+  matches := re.FindAllStringSubmatch(content, -1)
+  for _, match := range matches {
+    requiredPort := match[1]
+    for _, container := range containers {
+      if strings.Contains(container, fmt.Sprintf("%s->", requiredPort)) {
+        containerID := strings.Split(container, "\t")[0]
+        fmt.Println(fmt.Sprintf("Found container %s using to port %s, stopping it", containerID, requiredPort))
+        stopCommand := exec.Command("docker", "stop", containerID)
+        stopCommand.Stderr = os.Stderr
+        err := stopCommand.Run()
+        check(err)
+      }
+    }
+  }
+
+  upCommand := exec.Command("docker-compose", "up", "-d")
+  upCommand.Stdout = os.Stdout
+  upCommand.Stderr = os.Stderr
+  err = upCommand.Run()
+  check(err)
+
+  return
 }
 
 func ensureDockerComposeYamlExists() {
-  if _, err := os.Stat("docker-compose.yml"); os.IsNotExist(err) {
+  if dockerComposeYamlExists() {
+    fmt.Println("Found docker-compose.yml")
+  } else {
     err := ioutil.WriteFile("docker-compose.yml", []byte("version: \"2\"\n\nservices:\n"), 0644)
     check(err)
-  } else {
-    fmt.Println("Found docker-compose.yml")
   }
+}
+
+func dockerComposeYamlExists() (exists bool) {
+  _, err := os.Stat("docker-compose.yml")
+  return !os.IsNotExist(err)
+}
+
+func readDockerComposeYaml() (content string) {
+  b, err := ioutil.ReadFile("docker-compose.yml")
+  check(err)
+
+  return string(b)
 }
 
 func check(e error) {
