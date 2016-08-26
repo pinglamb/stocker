@@ -28,10 +28,18 @@ It will add `postgres` to your `docker-compose.yml`, it will also map the `ports
 
 ---
 
+This is another helper for managing your running dockers. When you have multiple projects and they are all using docker containers for external dependencies, it might be troublesome to find those containers that occupies the ports your current project needs. With the following command:
+
 ```
 stocker up
 ```
 
+It will find the containers which are using the ports you need and stop them for you. Hassle-Free ~
+
 ## Contribute
 
 Feel Free.
+
+## License
+
+MIT
